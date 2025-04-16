@@ -81,7 +81,8 @@ class DownloadAndLoadFlorence2Model:
                     'MiaoshouAI/Florence-2-base-PromptGen-v1.5',
                     'MiaoshouAI/Florence-2-large-PromptGen-v1.5',
                     'MiaoshouAI/Florence-2-base-PromptGen-v2.0',
-                    'MiaoshouAI/Florence-2-large-PromptGen-v2.0'
+                    'MiaoshouAI/Florence-2-large-PromptGen-v2.0',
+                    'silveroxides/Florence-2-large-TagToPhraseGrounding'
                     ],
                     {
                     "default": 'microsoft/Florence-2-base'
