@@ -67,9 +67,7 @@ class DownloadAndLoadFlorence2Model:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "model": (
-                    [ 
-                    'microsoft/Florence-2-base',
+            "model": (['microsoft/Florence-2-base',
                     'microsoft/Florence-2-base-ft',
                     'microsoft/Florence-2-large',
                     'microsoft/Florence-2-large-ft',
@@ -82,20 +80,10 @@ class DownloadAndLoadFlorence2Model:
                     'MiaoshouAI/Florence-2-large-PromptGen-v1.5',
                     'MiaoshouAI/Florence-2-base-PromptGen-v2.0',
                     'MiaoshouAI/Florence-2-large-PromptGen-v2.0',
-                    'silveroxides/furrence2-large'
-                    ],
-                    {
-                    "default": 'microsoft/Florence-2-base'
-                    }),
-            "precision": ([ 'fp16','bf16','fp32'],
-                    {
-                    "default": 'fp16'
-                    }),
-            "attention": (
-                    [ 'flash_attention_2', 'sdpa', 'eager'],
-                    {
-                    "default": 'sdpa'
-                    }),
+                    'silveroxides/furrence2-large'], {"default": 'microsoft/Florence-2-base'}),
+            "precision": ([ 'fp16','bf16','fp32'], {"default": 'fp16'}),
+            "attention": ([ 'flash_attention_2', 'sdpa', 'eager'],{"default": 'sdpa'}),
+            "use_safetensors": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "lora": ("PEFTLORA",),
@@ -107,7 +95,7 @@ class DownloadAndLoadFlorence2Model:
     FUNCTION = "loadmodel"
     CATEGORY = "Florence2"
 
-    def loadmodel(self, model, precision, attention, lora=None):
+    def loadmodel(self, model, precision, attention, use_safetensors, lora=None):
         device = mm.get_torch_device()
         offload_device = mm.unet_offload_device()
         dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[precision]
@@ -124,7 +112,7 @@ class DownloadAndLoadFlorence2Model:
             
         print(f"Florence2 using {attention} for attention")
         with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
-            model = AutoModelForCausalLM.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(offload_device)
+            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(offload_device)
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
@@ -180,11 +168,8 @@ class Florence2ModelLoader:
         return {"required": {
             "model": ([*s.model_paths], {"tooltip": "models are expected to be in Comfyui/models/LLM folder"}),
             "precision": (['fp16','bf16','fp32'],),
-            "attention": (
-                    [ 'flash_attention_2', 'sdpa', 'eager'],
-                    {
-                    "default": 'sdpa'
-                    }),
+            "attention": ([ 'flash_attention_2', 'sdpa', 'eager'], {"default": 'sdpa'}),
+            "use_safetensors": ("BOOLEAN", {"default": False}),
             },
             "optional": {
                 "lora": ("PEFTLORA",),
@@ -196,7 +181,7 @@ class Florence2ModelLoader:
     FUNCTION = "loadmodel"
     CATEGORY = "Florence2"
 
-    def loadmodel(self, model, precision, attention, lora=None):
+    def loadmodel(self, model, precision, attention, use_safetensors, lora=None):
         device = mm.get_torch_device()
         offload_device = mm.unet_offload_device()
         dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[precision]
@@ -204,7 +189,7 @@ class Florence2ModelLoader:
         print(f"Loading model from {model_path}")
         print(f"Florence2 using {attention} for attention")
         with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
-            model = AutoModelForCausalLM.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(offload_device)
+            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(offload_device)
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
