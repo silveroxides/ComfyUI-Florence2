@@ -85,9 +85,7 @@ class DownloadAndLoadFlorence2Model:
             "attention": ([ 'flash_attention_2', 'sdpa', 'eager'],{"default": 'sdpa'}),
             "use_safetensors": ("BOOLEAN", {"default": False}),
             },
-            "optional": {
-                "lora": ("PEFTLORA",),
-            }
+            "optional": {"lora": ("PEFTLORA",),}
         }
 
     RETURN_TYPES = ("FL2MODEL",)
@@ -112,7 +110,7 @@ class DownloadAndLoadFlorence2Model:
             
         print(f"Florence2 using {attention} for attention")
         with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
-            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(offload_device)
+            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, attn_implementation=attention,trust_remote_code=True).to(device=offload_device, dtype=dtype)
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
@@ -131,15 +129,7 @@ class DownloadAndLoadFlorence2Model:
 class DownloadAndLoadFlorence2Lora:
     @classmethod
     def INPUT_TYPES(s):
-        return {"required": {
-            "model": (
-                    [ 
-                    'NikshepShetty/Florence-2-pixelprose',
-                    ],
-                  ),            
-            },
-          
-        }
+        return {"required": {"model": (['NikshepShetty/Florence-2-pixelprose',],),},}
 
     RETURN_TYPES = ("PEFTLORA",)
     RETURN_NAMES = ("lora",)
@@ -168,8 +158,8 @@ class Florence2ModelLoader:
         return {"required": {
             "model": ([*s.model_paths], {"tooltip": "models are expected to be in Comfyui/models/LLM folder"}),
             "precision": (['fp16','bf16','fp32'],),
-            "attention": ([ 'flash_attention_2', 'sdpa', 'eager'], {"default": 'sdpa'}),
-            "use_safetensors": ("BOOLEAN", {"default": False}),
+            "attention": (['flash_attention_2', 'sdpa', 'eager'], {"default": 'sdpa'}),
+            "use_safetensors": ("BOOLEAN", {"default": True}),
             },
             "optional": {
                 "lora": ("PEFTLORA",),
@@ -189,7 +179,9 @@ class Florence2ModelLoader:
         print(f"Loading model from {model_path}")
         print(f"Florence2 using {attention} for attention")
         with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
-            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(offload_device)
+            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, attn_implementation=attention, trust_remote_code=True).to(device=offload_device, dtype=dtype)
+            # save_path = os.path.join(model_directory, "temporary")
+            # model.save_pretrained(save_path, safe_serialization=use_safetensors)
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
@@ -204,7 +196,48 @@ class Florence2ModelLoader:
             }
    
         return (florence2_model,)
-    
+
+class Florence2ModelSaver:
+    def __init__(self):
+        self.output_dir = folder_paths.get_folder_paths("LLM")
+
+    @classmethod
+    def INPUT_TYPES(s):
+        all_llm_paths = folder_paths.get_folder_paths("LLM")
+        s.model_paths = create_path_dict(all_llm_paths, lambda x: x.is_dir())
+
+        return {"required": {
+            "model": ([*s.model_paths], {"tooltip": "models are expected to be in Comfyui/models/LLM folder"}),
+            "precision": (['fp16','bf16','fp32'],),
+            "attention": (['flash_attention_2', 'sdpa', 'eager'], {"default": 'sdpa'}),
+            "safe_serialization": ("BOOLEAN", {"default": False, "tooltip": "Save model as safetensors"}),
+            "save_path": ("STRING", {"default": "Florence-2-large-temp"}),
+            }
+        }
+
+    RETURN_TYPES = ()
+    FUNCTION = "savemodel"
+    OUTPUT_NODE = True
+
+    CATEGORY = "Florence2"
+
+    def savemodel(self, model, precision, attention, safe_serialization, save_path):
+        device = mm.get_torch_device()
+        offload_device = mm.unet_offload_device()
+        dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[precision]
+        model_path = Florence2ModelSaver.model_paths.get(model)
+        primary_output_dir = self.output_dir[0]
+        full_output_folder = os.path.join(primary_output_dir, save_path)
+        os.makedirs(full_output_folder, exist_ok=True)
+        print(f"Loading model from {model_path}")
+        print(f"Florence2 using {attention} for attention")
+        with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
+            model = AutoModelForCausalLM.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(device)
+            model.save_pretrained(full_output_folder, safe_serialization=safe_serialization)
+        processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
+   
+        return {}
+
 class Florence2Run:
     @classmethod
     def INPUT_TYPES(s):
@@ -230,6 +263,7 @@ class Florence2Run:
                     'prompt_gen_mixed_caption',
                     'prompt_gen_analyze',
                     'prompt_gen_mixed_caption_plus',
+                    'style1_furry_caption',
                     ],
                    ),
                 "fill_mask": ("BOOLEAN", {"default": True}),
@@ -294,11 +328,12 @@ class Florence2Run:
             'prompt_gen_mixed_caption': '<MIXED_CAPTION>',
             'prompt_gen_analyze': '<ANALYZE>',
             'prompt_gen_mixed_caption_plus': '<MIXED_CAPTION_PLUS>',
+            'style1_furry_caption': '<STYLE1_FURRY_CAPTION>',
         }
         task_prompt = prompts.get(task, '<OD>')
 
-        if (task not in ['referring_expression_segmentation', 'caption_to_phrase_grounding', 'docvqa']) and text_input:
-            raise ValueError("Text input (prompt) is only supported for 'referring_expression_segmentation', 'caption_to_phrase_grounding', and 'docvqa'")
+        if (task not in ['referring_expression_segmentation', 'caption_to_phrase_grounding', 'docvqa', 'style1_furry_caption']) and text_input:
+            raise ValueError("Text input (prompt) is only supported for 'referring_expression_segmentation', 'caption_to_phrase_grounding', 'docvqa', and 'style1_furry_caption'")
 
         if text_input != "":
             prompt = task_prompt + " " + text_input
@@ -451,6 +486,9 @@ class Florence2Run:
     
                 plt.close(fig)
 
+                
+
+
             elif task == 'referring_expression_segmentation':
                 # Create a new black image
                 mask_image = Image.new('RGB', (W, H), 'black')
@@ -553,10 +591,14 @@ class Florence2Run:
 
                 pbar.update(1)
             
-            elif task == 'docvqa':
+            elif task == 'docvqa' or task == 'style1_furry_caption':
                 if text_input == "":
                     raise ValueError("Text input (prompt) is required for 'docvqa'")
-                prompt = "<DocVQA> " + text_input
+                if task == 'style1_furry_caption':
+                    task_prompt = prompts.get(task, '<STYLE1_FURRY_CAPTION>')
+                    prompt = text_input + "\n\n" + task_prompt
+                else:
+                    prompt = "<DocVQA> " + text_input
 
                 inputs = processor(text=prompt, images=image_pil, return_tensors="pt", do_rescale=False).to(dtype).to(device)
                 generated_ids = model.generate(
@@ -599,11 +641,13 @@ NODE_CLASS_MAPPINGS = {
     "DownloadAndLoadFlorence2Model": DownloadAndLoadFlorence2Model,
     "DownloadAndLoadFlorence2Lora": DownloadAndLoadFlorence2Lora,
     "Florence2ModelLoader": Florence2ModelLoader,
+    "Florence2ModelSaver": Florence2ModelSaver,
     "Florence2Run": Florence2Run,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "DownloadAndLoadFlorence2Model": "DownloadAndLoadFlorence2Model",
     "DownloadAndLoadFlorence2Lora": "DownloadAndLoadFlorence2Lora",
     "Florence2ModelLoader": "Florence2ModelLoader",
+    "Florence2ModelSaver": "Florence2ModelSaver",
     "Florence2Run": "Florence2Run",
 }
