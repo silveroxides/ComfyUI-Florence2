@@ -110,7 +110,7 @@ class DownloadAndLoadFlorence2Model:
             
         print(f"Florence2 using {attention} for attention")
         with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
-            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, attn_implementation=attention,trust_remote_code=True).to(device=offload_device, dtype=dtype)
+            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, torch_dtype=dtype, attn_implementation=attention,trust_remote_code=True)
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
@@ -179,7 +179,7 @@ class Florence2ModelLoader:
         print(f"Loading model from {model_path}")
         print(f"Florence2 using {attention} for attention")
         with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
-            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, attn_implementation=attention, trust_remote_code=True).to(device=offload_device, dtype=dtype)
+            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, torch_dtype=dtype, attn_implementation=attention, trust_remote_code=True)
             # save_path = os.path.join(model_directory, "temporary")
             # model.save_pretrained(save_path, safe_serialization=use_safetensors)
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
