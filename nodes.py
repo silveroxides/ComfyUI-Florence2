@@ -307,7 +307,12 @@ class Florence2Run:
         model.to(device)
         
         if seed:
-            set_seed(self.hash_seed(seed))
+            if torch.cuda.is_available():
+                seed_generator = torch.Generator(device='cuda')
+                seed_generator.manual_seed(self.hash_seed(seed))
+            else:
+                seed_generator = torch.Generator()
+                seed_generator.manual_seed(self.hash_seed(seed))
 
         colormap = ['blue','orange','green','purple','brown','pink','olive','cyan','red',
                     'lime','indigo','violet','aqua','magenta','gold','tan','skyblue']
