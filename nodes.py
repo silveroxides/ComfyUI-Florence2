@@ -12,7 +12,6 @@ import random
 import numpy as np
 import re
 from pathlib import Path
-import gc
 
 #workaround for unnecessary flash_attn requirement
 from unittest.mock import patch
@@ -311,8 +310,6 @@ class Florence2Run:
             print("Florence2Run: `aggressively_free_vram` is True. Calling `mm.unload_all_models()`.")
             mm.unload_all_models()
             mm.soft_empty_cache()
-            gc.collect()
-            gc.collect() # Calling it twice for good measure
 
         model.to(device)
         
