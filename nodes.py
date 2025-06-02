@@ -12,6 +12,7 @@ import random
 import numpy as np
 import re
 from pathlib import Path
+import gc
 
 #workaround for unnecessary flash_attn requirement
 from unittest.mock import patch
@@ -275,6 +276,7 @@ class Florence2Run:
                 "do_sample": ("BOOLEAN", {"default": True}),
                 "output_mask_select": ("STRING", {"default": ""}),
                 "seed": ("INT", {"default": 1, "min": 1, "max": 0xffffffffffffffff}),
+                "aggressively_free_vram": ("BOOLEAN", {"default": False, "tooltip": "If True, calls ComfyUI's `unload_all_models()` function before running this node. This will free maximum VRAM but will require all other models in the workflow to be reloaded when next needed, potentially slowing down overall workflow execution."}),
             }
         }
     
@@ -295,7 +297,7 @@ class Florence2Run:
         return hashed_seed % (2**32)
 
     def encode(self, image, text_input, florence2_model, task, fill_mask, keep_model_loaded=False, 
-            num_beams=3, max_new_tokens=1024, do_sample=True, output_mask_select="", seed=None):
+            num_beams=3, max_new_tokens=1024, do_sample=True, output_mask_select="", seed=None, aggressively_free_vram=False):
         device = mm.get_torch_device()
         _, height, width, _ = image.shape
         offload_device = mm.unet_offload_device()
@@ -304,6 +306,14 @@ class Florence2Run:
         processor = florence2_model['processor']
         model = florence2_model['model']
         dtype = florence2_model['dtype']
+
+        if aggressively_free_vram:
+            print("Florence2Run: `aggressively_free_vram` is True. Calling `mm.unload_all_models()`.")
+            mm.unload_all_models()
+            mm.soft_empty_cache()
+            gc.collect()
+            gc.collect() # Calling it twice for good measure
+
         model.to(device)
         
         if seed:
