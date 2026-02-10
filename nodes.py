@@ -17,6 +17,10 @@ from pathlib import Path
 from unittest.mock import patch
 from transformers.dynamic_module_utils import get_imports
 
+import transformers
+
+from safetensors.torch import save_file
+
 def fixed_get_imports(filename: str | os.PathLike) -> list[str]:
     try:
         if not str(filename).endswith("modeling_florence2.py"):
@@ -80,12 +84,26 @@ class DownloadAndLoadFlorence2Model:
                     'MiaoshouAI/Florence-2-large-PromptGen-v1.5',
                     'MiaoshouAI/Florence-2-base-PromptGen-v2.0',
                     'MiaoshouAI/Florence-2-large-PromptGen-v2.0',
-                    'silveroxides/furrence2-large'], {"default": 'microsoft/Florence-2-base'}),
-            "precision": ([ 'fp16','bf16','fp32'], {"default": 'fp16'}),
-            "attention": ([ 'flash_attention_2', 'sdpa', 'eager'],{"default": 'sdpa'}),
-            "use_safetensors": ("BOOLEAN", {"default": False}),
+                    'PJMixers-Images/Florence-2-base-Castollux-v0.5',
+                    'silveroxides/furrence2-large'
+                    ],
+                    {
+                    "default": 'microsoft/Florence-2-base'
+                    }),
+            "precision": ([ 'fp16','bf16','fp32'],
+                    {
+                    "default": 'fp16'
+                    }),
+            "attention": (
+                    [ 'flash_attention_2', 'sdpa', 'eager'],
+                    {
+                    "default": 'sdpa'
+                    }),
             },
-            "optional": {"lora": ("PEFTLORA",),}
+            "optional": {
+                "lora": ("PEFTLORA",),
+                "convert_to_safetensors": ("BOOLEAN", {"default": False, "tooltip": "Some of the older model weights are not saved in .safetensors format, which seem to cause longer loading times, this option converts the .bin weights to .safetensors"}),
+            }
         }
 
     RETURN_TYPES = ("FL2MODEL",)
@@ -93,7 +111,7 @@ class DownloadAndLoadFlorence2Model:
     FUNCTION = "loadmodel"
     CATEGORY = "Florence2"
 
-    def loadmodel(self, model, precision, attention, use_safetensors, lora=None):
+    def loadmodel(self, model, precision, attention, lora=None, convert_to_safetensors=False):
         device = mm.get_torch_device()
         offload_device = mm.unet_offload_device()
         dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[precision]
@@ -109,8 +127,30 @@ class DownloadAndLoadFlorence2Model:
                             local_dir_use_symlinks=False)
             
         print(f"Florence2 using {attention} for attention")
-        with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
-            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, torch_dtype=dtype, attn_implementation=attention,trust_remote_code=True)
+        
+        if convert_to_safetensors:
+            model_weight_path = os.path.join(model_path, 'pytorch_model.bin')
+            if os.path.exists(model_weight_path):
+                safetensors_weight_path = os.path.join(model_path, 'model.safetensors')
+                print(f"Converting {model_weight_path} to {safetensors_weight_path}")
+                if not os.path.exists(safetensors_weight_path):
+                    sd = torch.load(model_weight_path, map_location=offload_device)
+                    sd_new = {}
+                    for k, v in sd.items():
+                        sd_new[k] = v.clone()
+                    save_file(sd_new, safetensors_weight_path)
+                    if os.path.exists(safetensors_weight_path):
+                        print(f"Conversion successful. Deleting original file: {model_weight_path}")
+                        os.remove(model_weight_path)
+                        print(f"Original {model_weight_path} file deleted.")
+        
+        if transformers.__version__ < '4.51.0':
+            with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
+                 model = AutoModelForCausalLM.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(offload_device)
+        else:
+            from .modeling_florence2 import Florence2ForConditionalGeneration
+            model = Florence2ForConditionalGeneration.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype).to(offload_device)
+    
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
@@ -159,10 +199,10 @@ class Florence2ModelLoader:
             "model": ([*s.model_paths], {"tooltip": "models are expected to be in Comfyui/models/LLM folder"}),
             "precision": (['fp16','bf16','fp32'],),
             "attention": (['flash_attention_2', 'sdpa', 'eager'], {"default": 'sdpa'}),
-            "use_safetensors": ("BOOLEAN", {"default": True}),
             },
             "optional": {
                 "lora": ("PEFTLORA",),
+                "convert_to_safetensors": ("BOOLEAN", {"default": False, "tooltip": "Some of the older model weights are not saved in .safetensors format, which seem to cause longer loading times, this option converts the .bin weights to .safetensors"}),
             }
         }
 
@@ -171,17 +211,35 @@ class Florence2ModelLoader:
     FUNCTION = "loadmodel"
     CATEGORY = "Florence2"
 
-    def loadmodel(self, model, precision, attention, use_safetensors, lora=None):
+    def loadmodel(self, model, precision, attention, lora=None, convert_to_safetensors=False):
         device = mm.get_torch_device()
         offload_device = mm.unet_offload_device()
         dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[precision]
         model_path = Florence2ModelLoader.model_paths.get(model)
         print(f"Loading model from {model_path}")
         print(f"Florence2 using {attention} for attention")
-        with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
-            model = AutoModelForCausalLM.from_pretrained(model_path, use_safetensors=use_safetensors, torch_dtype=dtype, attn_implementation=attention, trust_remote_code=True)
-            # save_path = os.path.join(model_directory, "temporary")
-            # model.save_pretrained(save_path, safe_serialization=use_safetensors)
+        if convert_to_safetensors:
+            model_weight_path = os.path.join(model_path, 'pytorch_model.bin')
+            if os.path.exists(model_weight_path):
+                safetensors_weight_path = os.path.join(model_path, 'model.safetensors')
+                print(f"Converting {model_weight_path} to {safetensors_weight_path}")
+                if not os.path.exists(safetensors_weight_path):
+                    sd = torch.load(model_weight_path, map_location=offload_device)
+                    sd_new = {}
+                    for k, v in sd.items():
+                        sd_new[k] = v.clone()
+                    save_file(sd_new, safetensors_weight_path)
+                    if os.path.exists(safetensors_weight_path):
+                        print(f"Conversion successful. Deleting original file: {model_weight_path}")
+                        os.remove(model_weight_path)
+                        print(f"Original {model_weight_path} file deleted.")
+
+        if transformers.__version__ < '4.51.0':
+            with patch("transformers.dynamic_module_utils.get_imports", fixed_get_imports): #workaround for unnecessary flash_attn requirement
+                 model = AutoModelForCausalLM.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype,trust_remote_code=True).to(offload_device)
+        else:
+            from .modeling_florence2 import Florence2ForConditionalGeneration
+            model = Florence2ForConditionalGeneration.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype).to(offload_device)
         processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
@@ -369,6 +427,7 @@ class Florence2Run:
                 max_new_tokens=max_new_tokens,
                 do_sample=do_sample,
                 num_beams=num_beams,
+                use_cache=False,
             )
 
             results = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
@@ -418,18 +477,30 @@ class Florence2Run:
                     indexed_label = f"{index}.{label}"
                     
                     if fill_mask:
+                        # Ensure y1 is greater than or equal to y0 for mask drawing
+                        x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
+                        if y1 < y0:
+                            y0, y1 = y1, y0
+                        if x1 < x0:
+                            x0, x1 = x1, x0
+                            
                         if str(index) in mask_indexes:
                             print("match index:", str(index), "in mask_indexes:", mask_indexes)
-                            mask_draw.rectangle([bbox[0], bbox[1], bbox[2], bbox[3]], fill=(255, 255, 255))
+                            mask_draw.rectangle([x0, y0, x1, y1], fill=(255, 255, 255))
                         if label in mask_indexes:
                             print("match label")
-                            mask_draw.rectangle([bbox[0], bbox[1], bbox[2], bbox[3]], fill=(255, 255, 255))
+                            mask_draw.rectangle([x0, y0, x1, y1], fill=(255, 255, 255))
 
                     # Create a Rectangle patch
+                    # Ensure y1 is greater than or equal to y0
+                    y0, y1 = bbox[1], bbox[3]
+                    if y1 < y0:
+                        y0, y1 = y1, y0
+                    
                     rect = patches.Rectangle(
-                        (bbox[0], bbox[1]),  # (x,y) - lower left corner
+                        (bbox[0], y0),  # (x,y) - lower left corner
                         bbox[2] - bbox[0],   # Width
-                        bbox[3] - bbox[1],   # Height
+                        y1 - y0,   # Height
                         linewidth=1,
                         edgecolor='r',
                         facecolor='none',
@@ -439,9 +510,16 @@ class Florence2Run:
                     text_width = len(label) * 6  # Adjust multiplier based on your font size
                     text_height = 12  # Adjust based on your font size
 
+                    # Get corrected coordinates
+                    x0, y0, x1, y1 = bbox[0], bbox[1], bbox[2], bbox[3]
+                    if y1 < y0:
+                        y0, y1 = y1, y0
+                    if x1 < x0:
+                        x0, x1 = x1, x0
+
                     # Initial text position
-                    text_x = bbox[0]
-                    text_y = bbox[1] - text_height  # Position text above the top-left of the bbox
+                    text_x = x0
+                    text_y = y0 - text_height  # Position text above the top-left of the bbox
 
                     # Adjust text_x if text is going off the left or right edge
                     if text_x < 0:
@@ -451,7 +529,7 @@ class Florence2Run:
 
                     # Adjust text_y if text is going off the top edge
                     if text_y < 0:
-                        text_y = bbox[3]  # Move text below the bottom-left of the bbox if it doesn't overlap with bbox
+                        text_y = y1  # Move text below the bottom-left of the bbox if it doesn't overlap with bbox
 
                     # Add the rectangle to the plot
                     ax.add_patch(rect)
@@ -571,20 +649,27 @@ class Florence2Run:
                     color = random.choice(colormap)
                     new_box = (np.array(box) * scale).tolist()
                     
-                    if fill_mask:
-                        color_with_opacity = ImageColor.getrgb(color) + (180,)
-                        draw.polygon(new_box, outline=color, fill=color_with_opacity, width=3)
-                    else:
-                        draw.polygon(new_box, outline=color, width=3)
-                    
-                    draw.text((new_box[0]+8, new_box[1]+2),
-                              "{}".format(label),
-                              align="right",
-                              font=font,
-                              fill=color)
-                    
-                    # Draw the mask
-                    mask_draw.polygon(new_box, outline="white", fill="white")
+                    # Ensure polygon coordinates are valid
+                    # For polygons, we need to make sure the points form a valid shape
+                    # This is a simple check to ensure the polygon has at least 3 points
+                    if len(new_box) >= 6:  # At least 3 points (x,y pairs)
+                        if fill_mask:
+                            color_with_opacity = ImageColor.getrgb(color) + (180,)
+                            draw.polygon(new_box, outline=color, fill=color_with_opacity, width=3)
+                        else:
+                            draw.polygon(new_box, outline=color, width=3)
+                        
+                        # Get the first point for text positioning
+                        text_x, text_y = new_box[0]+8, new_box[1]+2
+                        
+                        draw.text((text_x, text_y),
+                                  "{}".format(label),
+                                  align="right",
+                                  font=font,
+                                  fill=color)
+                        
+                        # Draw the mask
+                        mask_draw.polygon(new_box, outline="white", fill="white")
                 
                 image_pil = Image.alpha_composite(image_pil, overlay)
                 image_pil = image_pil.convert('RGB')
@@ -619,6 +704,7 @@ class Florence2Run:
                     max_new_tokens=max_new_tokens,
                     do_sample=do_sample,
                     num_beams=num_beams,
+                    use_cache=False,
                 )
 
                 results = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
