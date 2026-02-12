@@ -4,7 +4,7 @@ import torchvision.transforms.functional as F
 import io
 import os
 import matplotlib
-matplotlib.use('Agg')   
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from PIL import Image, ImageDraw, ImageColor, ImageFont
@@ -14,10 +14,9 @@ import re
 from pathlib import Path
 
 #workaround for unnecessary flash_attn requirement
-from unittest.mock import patch
 from transformers.dynamic_module_utils import get_imports
-
 import transformers
+from packaging import version
 
 from safetensors.torch import save_file
 
