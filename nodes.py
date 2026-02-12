@@ -67,29 +67,29 @@ folder_paths.add_model_folder_path("LLM", model_directory)
 
 from transformers import AutoModelForCausalLM, AutoProcessor, set_seed
 
+model_list = [
+            'microsoft/Florence-2-base',
+            'microsoft/Florence-2-base-ft',
+            'microsoft/Florence-2-large',
+            'microsoft/Florence-2-large-ft',
+            'HuggingFaceM4/Florence-2-DocVQA',
+            'thwri/CogFlorence-2.1-Large',
+            'thwri/CogFlorence-2.2-Large',
+            'gokaygokay/Florence-2-SD3-Captioner',
+            'gokaygokay/Florence-2-Flux-Large',
+            'MiaoshouAI/Florence-2-base-PromptGen-v1.5',
+            'MiaoshouAI/Florence-2-large-PromptGen-v1.5',
+            'MiaoshouAI/Florence-2-base-PromptGen-v2.0',
+            'MiaoshouAI/Florence-2-large-PromptGen-v2.0',
+            'PJMixers-Images/Florence-2-base-Castollux-v0.5',
+            'silveroxides/furrence2-large'
+            ]
+
 class DownloadAndLoadFlorence2Model:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "model": (['microsoft/Florence-2-base',
-                    'microsoft/Florence-2-base-ft',
-                    'microsoft/Florence-2-large',
-                    'microsoft/Florence-2-large-ft',
-                    'HuggingFaceM4/Florence-2-DocVQA',
-                    'thwri/CogFlorence-2.1-Large',
-                    'thwri/CogFlorence-2.2-Large',
-                    'gokaygokay/Florence-2-SD3-Captioner',
-                    'gokaygokay/Florence-2-Flux-Large',
-                    'MiaoshouAI/Florence-2-base-PromptGen-v1.5',
-                    'MiaoshouAI/Florence-2-large-PromptGen-v1.5',
-                    'MiaoshouAI/Florence-2-base-PromptGen-v2.0',
-                    'MiaoshouAI/Florence-2-large-PromptGen-v2.0',
-                    'PJMixers-Images/Florence-2-base-Castollux-v0.5',
-                    'silveroxides/furrence2-large'
-                    ],
-                    {
-                    "default": 'microsoft/Florence-2-base'
-                    }),
+            "model": (model_list, {"default": 'microsoft/Florence-2-base'}),
             "precision": ([ 'fp16','bf16','fp32'],
                     {
                     "default": 'fp16'
@@ -112,6 +112,8 @@ class DownloadAndLoadFlorence2Model:
     CATEGORY = "Florence2"
 
     def loadmodel(self, model, precision, attention, lora=None, convert_to_safetensors=False):
+        if model not in model_list:
+            raise ValueError(f"Model {model} is not in the supported model list.")
         device = mm.get_torch_device()
         offload_device = mm.unet_offload_device()
         dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[precision]
@@ -177,6 +179,8 @@ class DownloadAndLoadFlorence2Lora:
     CATEGORY = "Florence2"
 
     def loadmodel(self, model):
+        if model not in ['NikshepShetty/Florence-2-pixelprose']:
+            raise ValueError(f"Lora Model {model} is not in the supported lora model list.")
         model_name = model.rsplit('/', 1)[-1]
         model_path = os.path.join(model_directory, model_name)
         
