@@ -1936,7 +1936,8 @@ class Florence2Decoder(Florence2LanguagePreTrainedModel):
 
 
 class Florence2LanguageModel(Florence2LanguagePreTrainedModel):
-    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
+    if not version.parse(transformers.__version__) >= version.parse('5.0.0'):
+        _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
 
     def __init__(self, config: Florence2LanguageConfig):
         super().__init__(config)
@@ -2072,7 +2073,7 @@ class Florence2LanguageForConditionalGeneration(Florence2LanguagePreTrainedModel
         # Initialize weights and apply final processing
         if not version.parse(transformers.__version__) >= version.parse('5.0.0'):
             self.post_init()
-    
+
     def _tie_weights(self):
         if self.config.tie_word_embeddings:
             self._tie_or_clone_weights(self.model.encoder.embed_tokens, self.model.shared)
