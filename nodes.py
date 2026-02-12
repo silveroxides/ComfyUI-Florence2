@@ -224,7 +224,8 @@ class DownloadAndLoadFlorence2Model:
             model, processor = load_model(model_path, attention, dtype, offload_device)
         else:
             from .modeling_florence2 import Florence2ForConditionalGeneration
-            model = Florence2ForConditionalGeneration.from_pretrained(model_path, attn_implementation=attention, dtype=dtype).to(offload_device)
+            print(f'DEBUG: Florence2 loading with dtype={dtype}, attention={attention}')
+            model = Florence2ForConditionalGeneration.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype).to(offload_device)
             processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
@@ -312,7 +313,8 @@ class Florence2ModelLoader:
             model, processor = load_model(model_path, attention, dtype, offload_device)
         else:
             from .modeling_florence2 import Florence2ForConditionalGeneration
-            model = Florence2ForConditionalGeneration.from_pretrained(model_path, attn_implementation=attention, dtype=dtype).to(offload_device)
+            print(f'DEBUG: Florence2 loading with dtype={dtype}, attention={attention}')
+            model = Florence2ForConditionalGeneration.from_pretrained(model_path, attn_implementation=attention, torch_dtype=dtype).to(offload_device)
             processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
 
         if lora is not None:
